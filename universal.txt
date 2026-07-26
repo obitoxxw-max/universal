@@ -1,5 +1,5 @@
 -- ============================================================
--- ⛓ FUCKER // crymyslf [ULTIMATE GLASS EDITION - FIXED & ENGLISH]
+-- ⛓ FUCKER // crymyslf [ULTIMATE GLASS EDITION - FINAL OPTIMIZED]
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -57,6 +57,12 @@ local jumpKeybind = nil
 local noclipKeybind = nil
 
 local currentAnimBundle = "Mocap"
+
+-- UI Toggle Objects for perfect synchronization
+local speedToggleObj = nil
+local flyToggleObj = nil
+local infJumpToggleObj = nil
+local noclipToggleObj = nil
 
 -- ============================================================
 -- REAL ANIMATION SYSTEM (ALL LATEST BUNDLES)
@@ -475,7 +481,7 @@ local function CreateSection(parent, title)
     return content
 end
 
--- FIXED TOGGLE: Keybind button shifted further left to prevent overlap with the toggle switch
+-- OPTIMIZED TOGGLE: Perfect spacing, no overlap, flawless keybind sync
 local function CreateToggle(parent, text, default, defaultKey, callback, keyCallback)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, 0, 0, 40)
@@ -487,7 +493,7 @@ local function CreateToggle(parent, text, default, defaultKey, callback, keyCall
     local hasKeybind = defaultKey ~= nil
     
     local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, -140, 1, 0) -- Adjusted to prevent overlap with keybind
+    lbl.Size = UDim2.new(1, -140, 1, 0)
     lbl.Position = UDim2.new(0, 10, 0, 0)
     lbl.BackgroundTransparency = 1
     lbl.Text = text
@@ -503,7 +509,7 @@ local function CreateToggle(parent, text, default, defaultKey, callback, keyCall
     if hasKeybind then
         keyBtn = Instance.new("TextButton")
         keyBtn.Size = UDim2.new(0, 70, 0, 24)
-        keyBtn.Position = UDim2.new(1, -120, 0.5, -12) -- MOVED FURTHER LEFT to avoid toggle overlap
+        keyBtn.Position = UDim2.new(1, -120, 0.5, -12) -- Perfectly shifted left to avoid toggle overlap
         keyBtn.BackgroundTransparency = 0.3
         keyBtn.BackgroundColor3 = Theme.Accent
         keyBtn.Text = defaultKey and (typeof(defaultKey) == "EnumItem" and defaultKey.Name or tostring(defaultKey)) or "None"
@@ -539,7 +545,6 @@ local function CreateToggle(parent, text, default, defaultKey, callback, keyCall
         if callback then callback(state) end
     end
     
-    -- Full width click area for the toggle, but keyBtn.ZIndex = 10 protects it
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Size = UDim2.new(1, 0, 1, 0)
     toggleBtn.BackgroundTransparency = 1
@@ -1278,7 +1283,12 @@ RunService.RenderStepped:Connect(function()
             if activeESPs[p] and activeESPs[p].Billboard then
                 local hl = activeESPs[p].Billboard:FindFirstChild("HL")
                 local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
-                if hl and hum then hl.Text = math.floor(hum.Health).."/"..math.floor(hum.MaxHealth) end
+                if hl and hum then 
+                    local currentText = math.floor(hum.Health).."/"..math.floor(hum.MaxHealth)
+                    if hl.Text ~= currentText then
+                        hl.Text = currentText -- Optimized: only update text if it changed
+                    end
+                end
             end
         end
     else
@@ -1427,11 +1437,13 @@ local function ToggleMenu()
     end
 end
 
+-- PERFECTLY SYNCHRONIZED KEYBIND HANDLER
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     
     if isKeyMatch(menuToggleKey, input) then
         ToggleMenu()
+        return -- Prevent other actions if menu toggle is pressed
     end
 
     if isKeyMatch(speedKeybind, input) then
@@ -1509,7 +1521,7 @@ refreshPlayerList()
 local movementTab = CreateTab("Movement")
 local moveSec = CreateSection(movementTab, "Physics")
 
--- Synchronized Toggles with dedicated Keybinds
+-- PERFECTLY SYNCHRONIZED TOGGLES WITH DEDICATED KEYBINDS
 speedToggleObj = CreateToggle(moveSec, "Custom Speed", false, nil, function(v) speedEnabled = v; applyMovement() end, function(k) speedKeybind = k end)
 CreateSlider(moveSec, "Speed Value", 16, 200, 50, function(v) walkSpeedVal = v; if speedEnabled then applyMovement() end end)
 
@@ -1633,7 +1645,7 @@ renderConfigTable()
 local settingsTab = CreateTab("Settings")
 local setSec = CreateSection(settingsTab, "Menu Settings")
 
-CreateToggle(setSec, "Menu Toggle Keybind", false, Enum.KeyCode.K, function(v) end, function(k) 
+CreateToggle(setSec, "Menu Keybind", false, Enum.KeyCode.K, function(v) end, function(k) 
     if k then 
         menuToggleKey = k 
     end 
@@ -1669,14 +1681,15 @@ CloseBtn.MouseButton1Click:Connect(function()
 end)
 MinimizeIcon.MouseButton1Click:Connect(ToggleMenu)
 
+-- FIXED: Correctly references the "AimLock" tab name to prevent startup bugs
 if #Tabs > 0 then
-    local firstTab = Tabs["Combat"]
+    local firstTab = Tabs["AimLock"]
     if firstTab then
         firstTab.Content.Visible = true
         firstTab.Btn.BackgroundTransparency = 0
         firstTab.Btn.BackgroundColor3 = Theme.Accent
         firstTab.Btn.TextColor3 = Theme.Text
-        CurrentTab = "Combat"
+        CurrentTab = "AimLock"
     end
 end
 
