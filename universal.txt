@@ -1,5 +1,5 @@
 -- ============================================================
--- ⛓ FUCKER // crymyslf (ULTIMATE EDITION + REAL FLING + ALL ANIMS)
+-- AnonHub
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -317,7 +317,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -80, 0, 25)
 titleLabel.Position = UDim2.new(0, 15, 0, 5)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "☢ AnonHub ☢"
+titleLabel.Text = "AnonHub"
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.TextSize = 16
 titleLabel.Font = Enum.Font.GothamBold
