@@ -1543,7 +1543,7 @@ updateMenuKeybind(Enum.KeyCode.K)
 -- ============================================================
 
 -- [ COMBAT TAB ]
-local combatTab = UI:CreateTab("Combat")
+local combatTab = UI:CreateTab("AimLock")
 local aimSec = UI:CreateSection(combatTab, "Aimbot Settings")
 
 UI:CreateToggle(aimSec, "Enable Aimbot", false, function(value)
