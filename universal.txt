@@ -1,5 +1,5 @@
 -- ============================================================
--- AnonHub 
+-- AnonHub
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -12,13 +12,11 @@ local ContextActionService = game:GetService("ContextActionService")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 
--- Curseur Roblox actif par défaut (sera masqué seulement si le crosshair du script est activé)
 UserInputService.MouseIconEnabled = true
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
--- Sauvegarde des valeurs d'éclairage d'origine
 local defaultLighting = {
     Brightness = Lighting.Brightness,
     ClockTime = Lighting.ClockTime,
@@ -28,29 +26,30 @@ local defaultLighting = {
 }
 
 -- ============================================================
--- VARIABLES GLOBALES (Defaults ajustés)
+-- VARIABLES GLOBALES
 -- ============================================================
 local aimEnabled = false
 local aimKey = Enum.UserInputType.MouseButton2
 local fovRadius = 150
-local showFov = false -- Désactivé par défaut
+local showFov = false
 local smoothnessVal = 10
 local checkWalls = true
-local checkTeam = false -- Désactivé par défaut
+local checkTeam = false
 local lockedTarget = nil
 local targetedPlayers = {}
+local fovColor = Color3.fromRGB(255, 50, 50) -- NOUVELLE VARIABLE : Couleur du FOV
 
 local espEnabled = false
 local showNames = true
 local showHealth = true
 local espColor = Color3.fromRGB(0, 200, 255)
-local espStyle = "Highlight" -- "Highlight", "3D Box", "Skeleton"
+local espStyle = "Highlight"
 local activeESPs = {}
 
 local tracersEnabled = false
 local tracerOrigin = "Bottom"
 
-local crosshairEnabled = false -- Désactivé par défaut pour garder le curseur Roblox
+local crosshairEnabled = false
 local crosshairStyle = "Cross"
 local crosshairColor = Color3.fromRGB(0, 255, 0)
 local crosshairThickness = 2
@@ -182,7 +181,7 @@ local function SkidFling(TargetPlayer)
 end
 
 -- ============================================================
--- DRAWING API (ZERO LAG VISUALS)
+-- DRAWING API
 -- ============================================================
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible = false
@@ -190,7 +189,7 @@ fovCircle.Thickness = 2
 fovCircle.NumSides = 64
 fovCircle.Filled = false
 fovCircle.Transparency = 0.8
-fovCircle.Color = Color3.fromRGB(255, 50, 50)
+fovCircle.Color = fovColor
 fovCircle.Radius = fovRadius
 
 local crosshairDrawings = {
@@ -214,11 +213,11 @@ end
 local function updateCrosshair(mousePos)
     if not crosshairEnabled then
         for _, l in pairs(crosshairDrawings) do l.Visible = false end
-        UserInputService.MouseIconEnabled = true -- Réactive le curseur Roblox par défaut
+        UserInputService.MouseIconEnabled = true
         return
     end
     
-    UserInputService.MouseIconEnabled = false -- Masque le curseur Roblox si le crosshair du script est actif
+    UserInputService.MouseIconEnabled = false
     
     local gap, size, thick, color = crosshairGap, 10, crosshairThickness, crosshairColor
     
@@ -238,7 +237,7 @@ local function updateCrosshair(mousePos)
 end
 
 -- ============================================================
--- CUSTOM UI SYSTEM (FAST & SMOOTH ANIMATIONS)
+-- CUSTOM UI SYSTEM
 -- ============================================================
 local UI = {}
 local tabs = {}
@@ -264,7 +263,6 @@ Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
 Instance.new("UIStroke", mainFrame).Color = Color3.fromRGB(30, 30, 40)
 Instance.new("UIStroke", mainFrame).Thickness = 1
 
--- Header Area
 local headerContainer = Instance.new("Frame")
 headerContainer.Name = "HeaderContainer"
 headerContainer.Size = UDim2.new(1, 0, 0, 70)
@@ -273,7 +271,6 @@ headerContainer.BorderSizePixel = 0
 headerContainer.Parent = mainFrame
 Instance.new("UICorner", headerContainer).CornerRadius = UDim.new(0, 8)
 
--- Avatar Container with Portal Background
 local avatarContainer = Instance.new("Frame")
 avatarContainer.Size = UDim2.new(0, 60, 0, 60)
 avatarContainer.Position = UDim2.new(0, 10, 0, 5)
@@ -318,14 +315,13 @@ local byLabel = Instance.new("TextLabel")
 byLabel.Size = UDim2.new(1, -80, 0, 20)
 byLabel.Position = UDim2.new(0, 80, 0, 32)
 byLabel.BackgroundTransparency = 1
-byLabel.Text = "by crymyslf"
+byLabel.Text = "by psych0pat3 on roblox"
 byLabel.TextColor3 = Color3.fromRGB(100, 100, 120)
 byLabel.TextSize = 12
 byLabel.Font = Enum.Font.Gotham
 byLabel.TextXAlignment = Enum.TextXAlignment.Left
 byLabel.Parent = headerContainer
 
--- Header Buttons
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.new(0, 30, 0, 30)
 closeBtn.Position = UDim2.new(1, -35, 0, 5)
@@ -358,7 +354,6 @@ separatorLine.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
 separatorLine.BorderSizePixel = 0
 separatorLine.Parent = headerContainer
 
--- Tab Container
 local tabContainer = Instance.new("Frame")
 tabContainer.Name = "TabContainer"
 tabContainer.Size = UDim2.new(0, 120, 1, -70)
@@ -367,7 +362,6 @@ tabContainer.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
 tabContainer.BorderSizePixel = 0
 tabContainer.Parent = mainFrame
 
--- Content Container
 local contentContainer = Instance.new("Frame")
 contentContainer.Name = "ContentContainer"
 contentContainer.Size = UDim2.new(1, -120, 1, -70)
@@ -376,7 +370,6 @@ contentContainer.BackgroundTransparency = 1
 contentContainer.BorderSizePixel = 0
 contentContainer.Parent = mainFrame
 
--- Discord Button
 local discordBtn = Instance.new("TextButton")
 discordBtn.Size = UDim2.new(1, -10, 0, 35)
 discordBtn.Position = UDim2.new(0, 5, 1, -40)
@@ -406,7 +399,6 @@ discordBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- UI Functions
 function UI:CreateTab(name)
     local tabIndex = #tabOrder + 1
     table.insert(tabOrder, name)
@@ -811,7 +803,6 @@ function UI:CreateTextbox(parent, text, default, callback)
     return {getValue = function() return input.Text end, setValue = function(val) input.Text = val end}
 end
 
--- Dragging & Position Saving
 local draggingUI = false
 local dragStart, startPos
 headerContainer.InputBegan:Connect(function(input)
@@ -833,7 +824,6 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- Minimize/Maximize (Animation améliorée et plus rapide)
 minimizeBtn.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     if isMinimized then
@@ -850,7 +840,6 @@ minimizeBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Smooth Open/Close Logic with Saved Position (Animation plus nette)
 local function toggleMenuSmooth()
     isMenuOpen = not isMenuOpen
     if isMenuOpen then
@@ -880,9 +869,6 @@ closeBtn.MouseButton1Click:Connect(function()
     toggleMenuSmooth()
 end)
 
--- ============================================================
--- GREETING NOTIFICATION
--- ============================================================
 local function showGreeting()
     local notif = Instance.new("Frame")
     notif.Size = UDim2.new(0, 250, 0, 50)
@@ -917,9 +903,6 @@ local function showGreeting()
     end)
 end
 
--- ============================================================
--- CONFIG SYSTEM
--- ============================================================
 local configListContainer = nil
 local configStatusLabel = nil
 
@@ -1025,9 +1008,6 @@ local function saveConfig(configName)
     end)
 end
 
--- ============================================================
--- PLAYER LIST SYSTEM
--- ============================================================
 local playerListContainer = nil
 local function refreshPlayerList()
     if not playerListContainer then return end
@@ -1130,7 +1110,7 @@ local function refreshPlayerList()
 end
 
 -- ============================================================
--- AIMLOCK SYSTEM
+-- AIMLOCK SYSTEM (FONCTION CORRIGÉE)
 -- ============================================================
 local function isAimKeyHeld()
     if typeof(aimKey) == "EnumItem" then
@@ -1141,7 +1121,7 @@ local function isAimKeyHeld()
 end
 
 -- ============================================================
--- ADVANCED ESP & VISUALS SYSTEM (STABLE SKELETON FIX)
+-- ADVANCED ESP & VISUALS SYSTEM
 -- ============================================================
 local function cleanupESP(p)
     local data = activeESPs[p]
@@ -1291,14 +1271,112 @@ for _, p in ipairs(Players:GetPlayers()) do
     end 
 end
 
+-- ============================================================
+-- MAIN RENDER LOOP (AIMLOCK CORRIGÉ + ESP + CROSSHAIR)
+-- ============================================================
 RunService.RenderStepped:Connect(function()
     camera = Workspace.CurrentCamera
     if not camera then return end
     local mousePos = UserInputService:GetMouseLocation()
+    
+    -- Positionnement et couleur du FOV
     fovCircle.Position = mousePos
+    fovCircle.Color = fovColor
     
     updateCrosshair(mousePos)
     
+    -- ============================================================
+    -- AIMLOCK LOGIC (ENTIÈREMENT RESTAURÉE)
+    -- ============================================================
+    if aimEnabled and isAimKeyHeld() then
+        if lockedTarget and lockedTarget.Character then
+            local hum = lockedTarget.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local targetPart = lockedTarget.Character:FindFirstChild("Head") or lockedTarget.Character:FindFirstChild("HumanoidRootPart")
+                if targetPart then
+                    local valid = true
+                    if checkTeam and player.Team and lockedTarget.Team and player.Team == lockedTarget.Team then valid = false end
+                    if checkWalls and valid then
+                        local origin = camera.CFrame.Position
+                        local direction = (targetPart.Position - origin).Unit
+                        local distance = (targetPart.Position - origin).Magnitude
+                        local params = RaycastParams.new()
+                        params.FilterDescendantsInstances = {player.Character, lockedTarget.Character}
+                        params.FilterType = Enum.RaycastFilterType.Exclude
+                        local rayResult = Workspace:Raycast(origin, direction * distance, params)
+                        if rayResult and not rayResult.Instance:IsDescendantOf(lockedTarget.Character) then valid = false end
+                    end
+                    if valid then
+                        local targetPos = targetPart.Position
+                        if smoothnessVal <= 1 then 
+                            camera.CFrame = CFrame.new(camera.CFrame.Position, targetPos)
+                        else 
+                            camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, targetPos), (21 - smoothnessVal) / 100) 
+                        end
+                    else
+                        lockedTarget = nil
+                    end
+                end
+            else
+                lockedTarget = nil
+            end
+        end
+        
+        if not lockedTarget then
+            local closestTarget, shortestDistance = nil, fovRadius
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p == player then continue end
+                if #targetedPlayers > 0 then
+                    local isTargeted = false
+                    for _, tName in ipairs(targetedPlayers) do if tName == p.Name then isTargeted = true break end end
+                    if not isTargeted then continue end
+                end
+                if checkTeam and p.Team and player.Team and p.Team == player.Team then continue end
+                local char = p.Character
+                if not char then continue end
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if not hum or hum.Health <= 0 then continue end
+                local targetPart = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+                if not targetPart then continue end
+                if checkWalls then
+                    local origin = camera.CFrame.Position
+                    local direction = (targetPart.Position - origin).Unit
+                    local distance = (targetPart.Position - origin).Magnitude
+                    local params = RaycastParams.new()
+                    params.FilterDescendantsInstances = {player.Character, char}
+                    params.FilterType = Enum.RaycastFilterType.Exclude
+                    local rayResult = Workspace:Raycast(origin, direction * distance, params)
+                    if rayResult and not rayResult.Instance:IsDescendantOf(char) then continue end
+                end
+                local screenPos, onScreen = camera:WorldToViewportPoint(targetPart.Position)
+                if onScreen then
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                    if dist < shortestDistance then 
+                        shortestDistance = dist
+                        closestTarget = p 
+                    end
+                end
+            end
+            if closestTarget then
+                lockedTarget = closestTarget
+                local tp = lockedTarget.Character:FindFirstChild("Head") or lockedTarget.Character:FindFirstChild("HumanoidRootPart")
+                if tp then
+                    local targetPos = tp.Position
+                    if smoothnessVal <= 1 then 
+                        camera.CFrame = CFrame.new(camera.CFrame.Position, targetPos)
+                    else 
+                        camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, targetPos), (21 - smoothnessVal) / 100) 
+                    end
+                end
+            end
+        end
+    else
+        lockedTarget = nil
+    end
+    
+    -- ============================================================
+    -- ESP LOGIC
+    -- ============================================================
     if espEnabled then
         for _, p in ipairs(Players:GetPlayers()) do
             ensureESP(p)
@@ -1312,7 +1390,6 @@ RunService.RenderStepped:Connect(function()
                 if hl then hl.Text = math.floor(hum.Health).."/"..math.floor(hum.MaxHealth) end
             end
             
-            -- Stable Skeleton Logic (CORRIGÉ : Plus de Lerp 2D pour éviter le décalage caméra)
             if espStyle == "Skeleton" and data.SkeletonLines then
                 if not char:FindFirstChild("HumanoidRootPart") then
                     for _, lineData in pairs(data.SkeletonLines) do 
@@ -1382,12 +1459,10 @@ RunService.RenderStepped:Connect(function()
                             data.SkeletonLines[index] = lineData
                         end
                         
-                        -- FIX: Assignation directe pour une stabilité parfaite (comme le Highlight)
-                        -- Cela empêche l'effet "élastique" ou de décalage quand la caméra bouge
                         lineData.drawing.From = targetFrom
                         lineData.drawing.To = targetTo
                         lineData.drawing.Color = espColor
-                        lineData.drawing.Thickness = 1.5 -- Fin et élégant
+                        lineData.drawing.Thickness = 1.5
                         lineData.drawing.Transparency = 1
                         
                         if onScreenA and onScreenB then
@@ -1536,7 +1611,6 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- FULLBRIGHT FIX
 local function updateLighting()
     if fullbright then
         Lighting.Brightness = 2
@@ -1553,9 +1627,6 @@ local function updateLighting()
     end
 end
 
--- ============================================================
--- MENU TOGGLE SYSTEM
--- ============================================================
 local function toggleMenu(actionName, inputState, inputObj)
     if inputState == Enum.UserInputState.Begin then 
         toggleMenuSmooth() 
@@ -1577,6 +1648,12 @@ UI:CreateKeybind(aimSec, "Aim Key (Hold)", Enum.UserInputType.MouseButton2, func
 UI:CreateSlider(aimSec, "FOV Radius", 10, 1000, 150, function(value) fovRadius = value; fovCircle.Radius = value end)
 UI:CreateSlider(aimSec, "Smoothness (1=Instant)", 1, 20, 10, function(value) smoothnessVal = value end)
 UI:CreateToggle(aimSec, "Show FOV Circle", false, function(value) showFov = value; fovCircle.Visible = value end)
+-- NOUVEAU : Dropdown pour la couleur du FOV
+UI:CreateDropdown(aimSec, "FOV Color", {"Red", "Cyan", "Blue", "Green", "Yellow", "Purple", "White"}, function(value)
+    local c = {Red=Color3.fromRGB(255,50,50), Cyan=Color3.fromRGB(0,200,255), Blue=Color3.fromRGB(50,150,255), Green=Color3.fromRGB(50,255,100), Yellow=Color3.fromRGB(255,220,50), Purple=Color3.fromRGB(180,50,255), White=Color3.fromRGB(255,255,255)}
+    fovColor = c[value] or Color3.fromRGB(255,50,50)
+    fovCircle.Color = fovColor
+end)
 UI:CreateToggle(aimSec, "Wall Check", true, function(value) checkWalls = value end)
 UI:CreateToggle(aimSec, "Team Check", false, function(value) checkTeam = value end)
 
@@ -1755,9 +1832,6 @@ UI:CreateButton(setSec, "Destroy Script", function()
     screenGui:Destroy()
 end)
 
--- ============================================================
--- KEYBIND TOGGLE HANDLER
--- ============================================================
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     local function isKeyMatch(keybind, input)
@@ -1774,9 +1848,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if isKeyMatch(noclipKeybind, input) then noclipEnabled = not noclipEnabled; noclipToggle.setState(noclipEnabled) end
 end)
 
--- ============================================================
--- INITIALISATION FINALE (ULTRA RAPIDE)
--- ============================================================
 if #tabOrder > 0 and tabs[tabOrder[1]] then
     for name, tabData in pairs(tabs) do
         tabData.content.Visible = false
@@ -1795,13 +1866,12 @@ refreshConfigList()
 renderConfigTable()
 refreshPlayerList()
 
--- Lancement immédiat sans délai inutile
 task.spawn(function()
     screenGui.Enabled = true
     showGreeting()
     toggleMenuSmooth()
 end)
 
-print("AnonHub V6.3 Final Loaded!")
+print("AnonHub V6.4 Loaded!")
 print("Menu Toggle: K (changeable in Settings)")
-print("Stable Skeleton (No Camera Lag) & Zero Bugs Integrated!")
+print("AimLock Fixed & Custom FOV Color Added!")
