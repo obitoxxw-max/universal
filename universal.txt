@@ -1,5 +1,5 @@
 -- ============================================================
--- AnonHub 
+-- AnonHub
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -38,7 +38,58 @@ do
         if RunService:IsStudio() then
             WindUI = require(game:GetService("ReplicatedStorage"):WaitForChild("WindUI"):WaitForChild("Init"))
         else
-            WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+            local winduiSrc = game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua")
+
+            -- Patch: double-click a Keybind to reset it to "None"
+            local okPatch, patched = pcall(function()
+                local s = winduiSrc:find("ad.AddSignal(ak.KeybindFrame.UIElements.Main.MouseButton1Click,function()", 1, true)
+                local e = s and winduiSrc:find("ad.AddSignal(ac.InputBegan,function(ao,ap)", s, true)
+                if not s or not e then return winduiSrc end
+                return winduiSrc:sub(1, s - 1)
+                    .. [=[ad.AddSignal(ak.KeybindFrame.UIElements.Main.MouseButton1Click,function()
+if am then
+if ak.CanChange then
+if ak.__dc and tick() - ak.__dc <= 0.3 then
+ak.__dc = tick()
+ak.Picking = false
+ak.__cancel = true
+ak:Set("None")
+return
+end
+ak.__dc = tick()
+ak.Picking = true
+ak.UIElements.Keybind.Frame.Frame.TextLabel.Text = "..."
+local ao
+local an
+ao = ac.InputBegan:Connect(function(ap)
+if ak.__cancel then ak.__cancel = nil ak.Picking = false ao:Disconnect() if an then an:Disconnect() end return end
+local aq
+if ap.UserInputType == Enum.UserInputType.Keyboard then
+if table.find(al, ap.KeyCode) then aq = nil return else aq = ap.KeyCode.Name end
+elseif ap.UserInputType == Enum.UserInputType.MouseButton1 and not table.find(al, "MouseLeftButton") then
+aq = "MouseLeftButton"
+elseif ap.UserInputType == Enum.UserInputType.MouseButton2 and not table.find(al, "MouseRightButton") then
+aq = "MouseRightButton"
+end
+if an then an:Disconnect() end
+an = ac.InputEnded:Connect(function(ar)
+if ak.__cancel then ak.__cancel = nil ak.Picking = false ao:Disconnect() an:Disconnect() return end
+if aq and (ar.KeyCode.Name == aq or aq == "MouseLeft" and ar.UserInputType == Enum.UserInputType.MouseButton1 or aq == "MouseRight" and ar.UserInputType == Enum.UserInputType.MouseButton2) then
+ak.Picking = false
+ak.UIElements.Keybind.Frame.Frame.TextLabel.Text = aq
+ak.Value = aq
+ao:Disconnect()
+an:Disconnect()
+end
+end)
+end)
+end
+end
+end)]=]
+                    .. winduiSrc:sub(e)
+            end)
+
+            WindUI = loadstring(okPatch and patched or winduiSrc)()
         end
     end
 end
@@ -64,6 +115,9 @@ local showHealth = true
 local espColor = Color3.fromRGB(0, 200, 255)
 local espStyle = "Highlight"
 local activeESPs = {}
+local espSkeletonThickness = 2
+local espBoxThickness = 2
+local espTracerThickness = 2
 
 local tracersEnabled = false
 local tracerOrigin = "Bottom"
@@ -241,7 +295,15 @@ fovCircle.Radius = fovRadius
 local crosshairDrawings = {
     top = Drawing.new("Line"), bottom = Drawing.new("Line"),
     left = Drawing.new("Line"), right = Drawing.new("Line"),
-    dot = Drawing.new("Circle")
+    tl = Drawing.new("Line"), tr = Drawing.new("Line"),
+    bl = Drawing.new("Line"), br = Drawing.new("Line"),
+    dot = Drawing.new("Circle"),
+    ring = Drawing.new("Circle"),
+    ring2 = Drawing.new("Circle"),
+    eyeL = Drawing.new("Circle"), eyeR = Drawing.new("Circle"),
+    heartL = Drawing.new("Circle"), heartR = Drawing.new("Circle"),
+    heartT = Drawing.new("Triangle"),
+    tri = Drawing.new("Triangle"),
 }
 
 local playerVisuals = {}
@@ -265,20 +327,67 @@ local function updateCrosshair(mousePos)
     
     UserInputService.MouseIconEnabled = false
     
+    local mX, mY = mousePos.X, mousePos.Y
     local gap, size, thick, color = crosshairGap, 10, crosshairThickness, crosshairColor
+    local d = crosshairDrawings
     
-    if crosshairStyle == "Cross" then
-        crosshairDrawings.dot.Visible = false
-        crosshairDrawings.top.Visible, crosshairDrawings.top.From, crosshairDrawings.top.To, crosshairDrawings.top.Color, crosshairDrawings.top.Thickness = true, Vector2.new(mousePos.X, mousePos.Y - gap), Vector2.new(mousePos.X, mousePos.Y - gap - size), color, thick
-        crosshairDrawings.bottom.Visible, crosshairDrawings.bottom.From, crosshairDrawings.bottom.To, crosshairDrawings.bottom.Color, crosshairDrawings.bottom.Thickness = true, Vector2.new(mousePos.X, mousePos.Y + gap), Vector2.new(mousePos.X, mousePos.Y + gap + size), color, thick
-        crosshairDrawings.left.Visible, crosshairDrawings.left.From, crosshairDrawings.left.To, crosshairDrawings.left.Color, crosshairDrawings.left.Thickness = true, Vector2.new(mousePos.X - gap, mousePos.Y), Vector2.new(mousePos.X - gap - size, mousePos.Y), color, thick
-        crosshairDrawings.right.Visible, crosshairDrawings.right.From, crosshairDrawings.right.To, crosshairDrawings.right.Color, crosshairDrawings.right.Thickness = true, Vector2.new(mousePos.X + gap, mousePos.Y), Vector2.new(mousePos.X + gap + size, mousePos.Y), color, thick
+    for _, l in pairs(d) do l.Visible = false end
+    
+    if crosshairStyle == "Cross" or crosshairStyle == "Cross Dot" then
+        d.top.Visible, d.top.From, d.top.To, d.top.Color, d.top.Thickness = true, Vector2.new(mX, mY - gap), Vector2.new(mX, mY - gap - size), color, thick
+        d.bottom.Visible, d.bottom.From, d.bottom.To, d.bottom.Color, d.bottom.Thickness = true, Vector2.new(mX, mY + gap), Vector2.new(mX, mY + gap + size), color, thick
+        d.left.Visible, d.left.From, d.left.To, d.left.Color, d.left.Thickness = true, Vector2.new(mX - gap, mY), Vector2.new(mX - gap - size, mY), color, thick
+        d.right.Visible, d.right.From, d.right.To, d.right.Color, d.right.Thickness = true, Vector2.new(mX + gap, mY), Vector2.new(mX + gap + size, mY), color, thick
+        if crosshairStyle == "Cross Dot" then
+            d.dot.Visible, d.dot.Position, d.dot.Radius, d.dot.Color, d.dot.Thickness, d.dot.Filled = true, mousePos, 2, color, 1, true
+        end
+    elseif crosshairStyle == "X" then
+        d.tl.Visible, d.tl.From, d.tl.To, d.tl.Color, d.tl.Thickness = true, Vector2.new(mX - gap, mY - gap), Vector2.new(mX - gap - size, mY - gap - size), color, thick
+        d.tr.Visible, d.tr.From, d.tr.To, d.tr.Color, d.tr.Thickness = true, Vector2.new(mX + gap, mY - gap), Vector2.new(mX + gap + size, mY - gap - size), color, thick
+        d.bl.Visible, d.bl.From, d.bl.To, d.bl.Color, d.bl.Thickness = true, Vector2.new(mX - gap, mY + gap), Vector2.new(mX - gap - size, mY + gap + size), color, thick
+        d.br.Visible, d.br.From, d.br.To, d.br.Color, d.br.Thickness = true, Vector2.new(mX + gap, mY + gap), Vector2.new(mX + gap + size, mY + gap + size), color, thick
+    elseif crosshairStyle == "T" then
+        d.top.Visible, d.top.From, d.top.To, d.top.Color, d.top.Thickness = true, Vector2.new(mX, mY), Vector2.new(mX, mY - size), color, thick
+        d.left.Visible, d.left.From, d.left.To, d.left.Color, d.left.Thickness = true, Vector2.new(mX - gap, mY), Vector2.new(mX - gap - size, mY), color, thick
+        d.right.Visible, d.right.From, d.right.To, d.right.Color, d.right.Thickness = true, Vector2.new(mX + gap, mY), Vector2.new(mX + gap + size, mY), color, thick
+    elseif crosshairStyle == "Diamond" then
+        local top = Vector2.new(mX, mY - size)
+        local right = Vector2.new(mX + size, mY)
+        local bottom = Vector2.new(mX, mY + size)
+        local left = Vector2.new(mX - size, mY)
+        d.tl.Visible, d.tl.From, d.tl.To, d.tl.Color, d.tl.Thickness = true, top, right, color, thick
+        d.tr.Visible, d.tr.From, d.tr.To, d.tr.Color, d.tr.Thickness = true, right, bottom, color, thick
+        d.bl.Visible, d.bl.From, d.bl.To, d.bl.Color, d.bl.Thickness = true, bottom, left, color, thick
+        d.br.Visible, d.br.From, d.br.To, d.br.Color, d.br.Thickness = true, left, top, color, thick
+    elseif crosshairStyle == "Star" then
+        d.top.Visible, d.top.From, d.top.To, d.top.Color, d.top.Thickness = true, Vector2.new(mX, mY - gap), Vector2.new(mX, mY - gap - size), color, thick
+        d.bottom.Visible, d.bottom.From, d.bottom.To, d.bottom.Color, d.bottom.Thickness = true, Vector2.new(mX, mY + gap), Vector2.new(mX, mY + gap + size), color, thick
+        d.left.Visible, d.left.From, d.left.To, d.left.Color, d.left.Thickness = true, Vector2.new(mX - gap, mY), Vector2.new(mX - gap - size, mY), color, thick
+        d.right.Visible, d.right.From, d.right.To, d.right.Color, d.right.Thickness = true, Vector2.new(mX + gap, mY), Vector2.new(mX + gap + size, mY), color, thick
+        d.tl.Visible, d.tl.From, d.tl.To, d.tl.Color, d.tl.Thickness = true, Vector2.new(mX - gap, mY - gap), Vector2.new(mX - gap - size, mY - gap - size), color, thick
+        d.tr.Visible, d.tr.From, d.tr.To, d.tr.Color, d.tr.Thickness = true, Vector2.new(mX + gap, mY - gap), Vector2.new(mX + gap + size, mY - gap - size), color, thick
+        d.bl.Visible, d.bl.From, d.bl.To, d.bl.Color, d.bl.Thickness = true, Vector2.new(mX - gap, mY + gap), Vector2.new(mX - gap - size, mY + gap + size), color, thick
+        d.br.Visible, d.br.From, d.br.To, d.br.Color, d.br.Thickness = true, Vector2.new(mX + gap, mY + gap), Vector2.new(mX + gap + size, mY + gap + size), color, thick
     elseif crosshairStyle == "Circle" then
-        for _, l in pairs(crosshairDrawings) do if typeof(l) == "table" or l.Name ~= "dot" then l.Visible = false end end
-        crosshairDrawings.dot.Visible, crosshairDrawings.dot.Position, crosshairDrawings.dot.Radius, crosshairDrawings.dot.Color, crosshairDrawings.dot.Thickness, crosshairDrawings.dot.Filled = true, mousePos, gap + 5, color, thick, false
+        d.ring.Visible, d.ring.Position, d.ring.Radius, d.ring.Color, d.ring.Thickness, d.ring.Filled, d.ring.NumSides = true, mousePos, gap + 5, color, thick, false, 64
+    elseif crosshairStyle == "Target" then
+        d.ring.Visible, d.ring.Position, d.ring.Radius, d.ring.Color, d.ring.Thickness, d.ring.Filled, d.ring.NumSides = true, mousePos, gap + 5, color, thick, false, 64
+        d.ring2.Visible, d.ring2.Position, d.ring2.Radius, d.ring2.Color, d.ring2.Thickness, d.ring2.Filled, d.ring2.NumSides = true, mousePos, gap + 11, color, math.max(1, thick - 1), false, 64
+        d.dot.Visible, d.dot.Position, d.dot.Radius, d.dot.Color, d.dot.Thickness, d.dot.Filled = true, mousePos, 2, color, 1, true
     elseif crosshairStyle == "Dot" then
-        for _, l in pairs(crosshairDrawings) do if typeof(l) == "table" or l.Name ~= "dot" then l.Visible = false end end
-        crosshairDrawings.dot.Visible, crosshairDrawings.dot.Position, crosshairDrawings.dot.Radius, crosshairDrawings.dot.Color, crosshairDrawings.dot.Thickness, crosshairDrawings.dot.Filled = true, mousePos, 2, color, 1, true
+        d.dot.Visible, d.dot.Position, d.dot.Radius, d.dot.Color, d.dot.Thickness, d.dot.Filled = true, mousePos, 2, color, 1, true
+    elseif crosshairStyle == "Arrow" then
+        d.tri.Visible, d.tri.PointA, d.tri.PointB, d.tri.PointC, d.tri.Color, d.tri.Thickness, d.tri.Filled = true, Vector2.new(mX, mY - gap - size), Vector2.new(mX - size/2, mY - gap), Vector2.new(mX + size/2, mY - gap), color, 1, true
+        d.bottom.Visible, d.bottom.From, d.bottom.To, d.bottom.Color, d.bottom.Thickness = true, Vector2.new(mX, mY + gap), Vector2.new(mX, mY + gap + size), color, thick
+    elseif crosshairStyle == "Heart" then
+        d.heartL.Visible, d.heartL.Position, d.heartL.Radius, d.heartL.Color, d.heartL.Thickness, d.heartL.Filled = true, Vector2.new(mX - size*0.25, mY - size*0.15), size*0.35, color, 1, true
+        d.heartR.Visible, d.heartR.Position, d.heartR.Radius, d.heartR.Color, d.heartR.Thickness, d.heartR.Filled = true, Vector2.new(mX + size*0.25, mY - size*0.15), size*0.35, color, 1, true
+        d.heartT.Visible, d.heartT.PointA, d.heartT.PointB, d.heartT.PointC, d.heartT.Color, d.heartT.Thickness, d.heartT.Filled = true, Vector2.new(mX - size*0.6, mY - size*0.05), Vector2.new(mX + size*0.6, mY - size*0.05), Vector2.new(mX, mY + size*0.75), color, 1, true
+    elseif crosshairStyle == "Smiley" then
+        d.ring.Visible, d.ring.Position, d.ring.Radius, d.ring.Color, d.ring.Thickness, d.ring.Filled, d.ring.NumSides = true, mousePos, gap + 6, color, thick, false, 64
+        d.eyeL.Visible, d.eyeL.Position, d.eyeL.Radius, d.eyeL.Color, d.eyeL.Thickness, d.eyeL.Filled = true, Vector2.new(mX - size*0.3, mY - size*0.2), 2, color, 1, true
+        d.eyeR.Visible, d.eyeR.Position, d.eyeR.Radius, d.eyeR.Color, d.eyeR.Thickness, d.eyeR.Filled = true, Vector2.new(mX + size*0.3, mY - size*0.2), 2, color, 1, true
+        d.bottom.Visible, d.bottom.From, d.bottom.To, d.bottom.Color, d.bottom.Thickness = true, Vector2.new(mX - size*0.25, mY + size*0.25), Vector2.new(mX + size*0.25, mY + size*0.25), color, thick
     end
 end
 
@@ -313,6 +422,13 @@ local function cleanupESP(p)
             if data.SelectionBox then data.SelectionBox:Destroy() end
             if data.SkeletonLines then
                 for _, lineData in pairs(data.SkeletonLines) do
+                    if lineData.drawing and lineData.drawing.Remove then 
+                        lineData.drawing:Remove() 
+                    end
+                end
+            end
+            if data.BoxLines then
+                for _, lineData in pairs(data.BoxLines) do
                     if lineData.drawing and lineData.drawing.Remove then 
                         lineData.drawing:Remove() 
                     end
@@ -394,13 +510,7 @@ local function ensureESP(p)
             data.Highlight = hl
             
         elseif espStyle == "3D Box" then
-            local sb = Instance.new("SelectionBox")
-            sb.Adornee = char
-            sb.Color3 = espColor
-            sb.LineThickness = 0.03
-            sb.SurfaceTransparency = 1
-            sb.Parent = char
-            data.SelectionBox = sb
+            data.BoxLines = {}
             
         elseif espStyle == "Skeleton" then
             data.SkeletonLines = {}
@@ -423,9 +533,6 @@ local function ensureESP(p)
         if data.Highlight then
             data.Highlight.FillColor = espColor
             data.Highlight.OutlineColor = espColor
-        end
-        if data.SelectionBox then
-            data.SelectionBox.Color3 = espColor
         end
     end
 end
@@ -642,7 +749,7 @@ RunService.RenderStepped:Connect(function()
                         lineData.drawing.From = targetFrom
                         lineData.drawing.To = targetTo
                         lineData.drawing.Color = espColor
-                        lineData.drawing.Thickness = 1.5
+                        lineData.drawing.Thickness = espSkeletonThickness
                         lineData.drawing.Transparency = 1
                         
                         if onScreenA and onScreenB then
@@ -652,6 +759,54 @@ RunService.RenderStepped:Connect(function()
                         end
                     elseif data.SkeletonLines[index] then
                         data.SkeletonLines[index].drawing.Visible = false
+                    end
+                end
+            elseif espStyle == "3D Box" and data.BoxLines then
+                local ok, boxCFrame, boxSize = pcall(function()
+                    return char:GetBoundingBox()
+                end)
+                if not ok or not boxCFrame then
+                    for _, lineData in pairs(data.BoxLines) do lineData.drawing.Visible = false end
+                else
+                    local h = boxSize / 2
+                    local corners = {
+                        boxCFrame * Vector3.new(-h.X, -h.Y, -h.Z),
+                        boxCFrame * Vector3.new( h.X, -h.Y, -h.Z),
+                        boxCFrame * Vector3.new( h.X, -h.Y,  h.Z),
+                        boxCFrame * Vector3.new(-h.X, -h.Y,  h.Z),
+                        boxCFrame * Vector3.new(-h.X,  h.Y, -h.Z),
+                        boxCFrame * Vector3.new( h.X,  h.Y, -h.Z),
+                        boxCFrame * Vector3.new( h.X,  h.Y,  h.Z),
+                        boxCFrame * Vector3.new(-h.X,  h.Y,  h.Z),
+                    }
+                    local pts = {}
+                    local anyOnScreen = false
+                    for i = 1, 8 do
+                        local vp, onScreen = camera:WorldToViewportPoint(corners[i])
+                        pts[i] = Vector2.new(vp.X, vp.Y)
+                        if onScreen then anyOnScreen = true end
+                    end
+                    local edges = {
+                        {1,2},{2,3},{3,4},{4,1},
+                        {5,6},{6,7},{7,8},{8,5},
+                        {1,5},{2,6},{3,7},{4,8},
+                    }
+                    if not anyOnScreen then
+                        for _, lineData in pairs(data.BoxLines) do lineData.drawing.Visible = false end
+                    else
+                        for index, edge in ipairs(edges) do
+                            local lineData = data.BoxLines[index]
+                            if not lineData then
+                                lineData = { drawing = Drawing.new("Line") }
+                                data.BoxLines[index] = lineData
+                            end
+                            local l = lineData.drawing
+                            l.From = pts[edge[1]]
+                            l.To = pts[edge[2]]
+                            l.Color = espColor
+                            l.Thickness = espBoxThickness
+                            l.Visible = true
+                        end
                     end
                 end
             end
@@ -691,7 +846,7 @@ RunService.RenderStepped:Connect(function()
                 vis.tracer.From = getTracerOrigin()
                 vis.tracer.To = screenVec
                 vis.tracer.Color = espColor
-                vis.tracer.Thickness = 1.5
+                vis.tracer.Thickness = espTracerThickness
             else
                 vis.tracer.Visible = false
             end
@@ -860,6 +1015,47 @@ do
         Icon = "solar:home-2-bold",
     })
 
+    local pfpFrame = Instance.new("Frame")
+    pfpFrame.Name = "AnonHub_ProfilePicture"
+    pfpFrame.Size = UDim2.new(0, 96, 0, 96)
+    pfpFrame.BackgroundTransparency = 1
+    pfpFrame.LayoutOrder = -99999
+    pfpFrame.Parent = homeTab.UIElements.ContainerFrame
+
+    local pfp = Instance.new("ImageLabel")
+    pfp.Name = "ProfilePicture"
+    pfp.Size = UDim2.new(1, 0, 1, 0)
+    pfp.BackgroundTransparency = 1
+    pfp.ScaleType = Enum.ScaleType.Fit
+    pfp.Image = "https://www.roblox.com/Thumbs/Avatar.ashx?x=420&y=420&userId=" .. player.UserId
+    pfp.Parent = pfpFrame
+
+    homeTab:Paragraph({
+        Title = "Utilisateur",
+        Desc = player.DisplayName .. " (@" .. player.Name .. ")",
+    })
+    homeTab:Space()
+
+    local pingPara = homeTab:Paragraph({
+        Title = "Ping",
+        Desc = "-- ms",
+    })
+    homeTab:Space()
+
+    task.spawn(function()
+        while true do
+            task.wait(1)
+            local ok, ping = pcall(Players.GetPing, Players, player)
+            local text = "-- ms"
+            if ok and type(ping) == "number" and ping > 0 then
+                text = math.floor(ping + 0.5) .. " ms"
+            end
+            if pingPara and pingPara.SetDesc then
+                pcall(function() pingPara:SetDesc(text) end)
+            end
+        end
+    end)
+
     local homeSec = homeTab:Section({ Title = "Informations", Opened = true })
 
     homeSec:Paragraph({
@@ -1023,7 +1219,6 @@ do
         Flag = "EspEnabled",
         Callback = function(value) espEnabled = value end,
     })
-    visualsTab:Space()
 
     espSec:Toggle({
         Title = "Show Names",
@@ -1031,7 +1226,6 @@ do
         Flag = "EspNames",
         Callback = function(value) showNames = value end,
     })
-    visualsTab:Space()
 
     espSec:Toggle({
         Title = "Show Health",
@@ -1039,7 +1233,6 @@ do
         Flag = "EspHealth",
         Callback = function(value) showHealth = value end,
     })
-    visualsTab:Space()
 
     espSec:Dropdown({
         Title = "ESP Style",
@@ -1053,7 +1246,6 @@ do
             end
         end,
     })
-    visualsTab:Space()
 
     espSec:Dropdown({
         Title = "ESP Color",
@@ -1064,6 +1256,24 @@ do
             local c = {Cyan=Color3.fromRGB(0,200,255), Red=Color3.fromRGB(255,50,50), Blue=Color3.fromRGB(50,150,255), Green=Color3.fromRGB(50,255,100), Yellow=Color3.fromRGB(255,220,50), Purple=Color3.fromRGB(180,50,255), White=Color3.fromRGB(255,255,255)}
             espColor = c[value] or Color3.fromRGB(0,200,255)
         end,
+    })
+
+    espSec:Slider({
+        Title = "Skeleton Thickness",
+        Desc = "Thickness of the ESP skeleton lines",
+        Step = 1,
+        Value = { Min = 1, Max = 8, Default = 2 },
+        Flag = "EspSkeletonThickness",
+        Callback = function(value) espSkeletonThickness = value end,
+    })
+
+    espSec:Slider({
+        Title = "3D Box Thickness",
+        Desc = "Thickness of the 3D box outline",
+        Step = 1,
+        Value = { Min = 1, Max = 8, Default = 2 },
+        Flag = "EspBoxThickness",
+        Callback = function(value) espBoxThickness = value end,
     })
 
     local tracSec = visualsTab:Section({ Title = "Tracers", Opened = true })
@@ -1084,22 +1294,44 @@ do
         Callback = function(value) tracerOrigin = value end,
     })
 
+    tracSec:Slider({
+        Title = "Tracer Thickness",
+        Desc = "Thickness of the tracer lines",
+        Step = 1,
+        Value = { Min = 1, Max = 8, Default = 2 },
+        Flag = "EspTracerThickness",
+        Callback = function(value) espTracerThickness = value end,
+    })
+
     local crossSec = visualsTab:Section({ Title = "Custom Crosshair", Opened = true })
 
     crossSec:Toggle({
         Title = "Enable Crosshair",
+        Desc = "Hides the default Roblox cursor",
         Value = false,
         Flag = "CrosshairEnabled",
-        Callback = function(value) crosshairEnabled = value end,
+        Callback = function(value)
+            crosshairEnabled = value
+            UserInputService.MouseIconEnabled = not value
+        end,
     })
     visualsTab:Space()
 
     crossSec:Dropdown({
         Title = "Crosshair Style",
-        Values = { "Cross", "Circle", "Dot" },
+        Values = { "Cross", "Cross Dot", "X", "T", "Diamond", "Star", "Circle", "Target", "Dot", "Arrow", "Heart", "Smiley" },
         Value = "Cross",
         Flag = "CrosshairStyle",
         Callback = function(value) crosshairStyle = value end,
+    })
+    visualsTab:Space()
+
+    crossSec:Slider({
+        Title = "Crosshair Thickness",
+        Step = 1,
+        Value = { Min = 1, Max = 8, Default = 2 },
+        Flag = "CrosshairThickness",
+        Callback = function(value) crosshairThickness = value end,
     })
     visualsTab:Space()
 
@@ -1109,6 +1341,18 @@ do
         Value = { Min = 0, Max = 20, Default = 5 },
         Flag = "CrosshairGap",
         Callback = function(value) crosshairGap = value end,
+    })
+    visualsTab:Space()
+
+    crossSec:Dropdown({
+        Title = "Crosshair Color",
+        Values = { "Green", "Red", "Cyan", "Blue", "Yellow", "Purple", "White", "Pink" },
+        Value = "Green",
+        Flag = "CrosshairColor",
+        Callback = function(value)
+            local c = {Green=Color3.fromRGB(0,255,0), Red=Color3.fromRGB(255,50,50), Cyan=Color3.fromRGB(0,200,255), Blue=Color3.fromRGB(50,150,255), Yellow=Color3.fromRGB(255,220,50), Purple=Color3.fromRGB(180,50,255), White=Color3.fromRGB(255,255,255), Pink=Color3.fromRGB(255,105,180)}
+            crosshairColor = c[value] or Color3.fromRGB(0,255,0)
+        end,
     })
 end
 
@@ -1522,7 +1766,7 @@ do
         Desc = "Open / close the menu",
         Value = "K",
         Callback = function(v)
-            Window:SetToggleKey(Enum.KeyCode[v])
+            if v ~= "None" then Window:SetToggleKey(Enum.KeyCode[v]) end
         end,
     })
     settingsTab:Space()
@@ -1664,5 +1908,3 @@ task.spawn(function()
 end)
 
 print("AnonHub Loaded!")
-
-
