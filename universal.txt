@@ -1,6 +1,5 @@
 -- ============================================================
--- AnonHub V6.5 Final - WindUI Edition
--- Fixed Anti-Fling & Aimlock Hold/Toggle
+-- AnonHub 
 -- ============================================================
 
 local Players = game:GetService("Players")
