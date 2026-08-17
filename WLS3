@@ -1,10 +1,12 @@
 --[[
-    Broly Hub  |  Weight Lifting Simulator 3  (v3)
+    Broly Hub  |  Weight Lifting Simulator 3  (v4)
     - Auto-farm Force (label), sans respawn
     - Auto Rebirth (sans limite)
     - Auto Pets, Crates
-    - TP Safe Zone pour le farm Force (evite de se faire tuer)
-    - Refresh token reglable (defaut 50ms = 0.05s)
+    - Auto Speed
+    - AUTO KILL ALL: TP sur chaque joueur du lobby + Combat tool + remotes (tue tant que c'est ON)
+    - Safe Zone SUPER HAUTE dans le ciel, bloquee dans les airs (inatteignable)
+    - Theme WindUI blanc / noir / rose
     - Masquer le hub avec la touche K
 ]]
 
@@ -46,11 +48,13 @@ local rebirthRemote = rEvents:WaitForChild("rebirthEvent")
 local buyPetRemote = rEvents:WaitForChild("buyPetRemote")
 local crateRemote = rEvents:WaitForChild("crateRemote")
 local purchaseEvent = rEvents:WaitForChild("purchaseEvent")
+local brawlEvent = rEvents:WaitForChild("brawlEvent")
 local tokenRemote = RS:WaitForChild("remote_events"):WaitForChild("token")
 
 local leaderstats = LP:WaitForChild("leaderstats")
 local strength = leaderstats:WaitForChild("Strength")
 local rebirths = leaderstats:WaitForChild("Rebirths")
+local killsStat = leaderstats:FindFirstChild("Kills")
 local gems = LP:WaitForChild("Gems")
 local speedStat = LP:FindFirstChild("Speed")
 local equippedPet = LP:WaitForChild("equippedPet")
@@ -69,6 +73,10 @@ local function fmt(n)
 	return tostring(math.floor(n))
 end
 
+local function currentKills()
+	return killsStat and killsStat.Value or 0
+end
+
 -- ================= OPTIONS =================
 local farmOn = false
 local farmValue = 2121300000
@@ -78,9 +86,12 @@ local refreshInterval = 0.05
 local autoRebirth = false
 local autoPet = false
 local safeZoneOn = false
-local safeZone = Vector3.new(0, 150, 0)
+local safeZoneHeight = 1500
 local autoSpeedOn = false
 local speedTarget = Vector3.new(-689, 1370, -5257)
+local killOn = false
+local killKillsBefore = currentKills()
+local killLogLines = {}
 
 -- ================= TOKEN =================
 local cachedToken = nil
@@ -180,25 +191,29 @@ task.spawn(function()
 		end
 	end
 end)
+
+-- ================= SAFE ZONE (super haute, bloquee dans les airs) =================
 local function teleportToSafe()
 	local ch = LP.Character
 	local root = ch and ch:FindFirstChild("HumanoidRootPart")
 	if root then
 		pcall(function()
-			root.CFrame = CFrame.new(safeZone)
+			root.CFrame = CFrame.new(0, safeZoneHeight, 0)
+			root.AssemblyLinearVelocity = Vector3.zero
 		end)
 	end
 end
 
 task.spawn(function()
 	while STATE.alive() do
-		task.wait(1.5)
+		task.wait(0.12)
 		if safeZoneOn then
 			local ch = LP.Character
 			local root = ch and ch:FindFirstChild("HumanoidRootPart")
-			if root and (root.Position - safeZone).Magnitude > 8 then
+			if root then
 				pcall(function()
-					root.CFrame = CFrame.new(safeZone)
+					root.CFrame = CFrame.new(0, safeZoneHeight, 0)
+					root.AssemblyLinearVelocity = Vector3.zero
 				end)
 			end
 		end
@@ -218,6 +233,124 @@ task.spawn(function()
 				hum:ChangeState(Enum.HumanoidStateType.Running)
 				hum:Move(Vector3.new(0, 0, -1), true)
 			end
+		end
+	end
+end)
+
+-- ================= AUTO KILL ALL =================
+local function equippedCombat()
+	return LP.Character and LP.Character:FindFirstChild("Combat")
+end
+
+local function ensureCombat()
+	local tool = equippedCombat()
+	if tool then
+		return tool
+	end
+	tool = LP.Backpack:FindFirstChild("Combat")
+	if tool and LP.Character and LP.Character:FindFirstChildOfClass("Humanoid") then
+		pcall(function()
+			LP.Character:FindFirstChildOfClass("Humanoid"):EquipTool(tool)
+		end)
+		task.wait(0.12)
+		tool = equippedCombat()
+	end
+	return tool
+end
+
+local function aliveTargets()
+	local t = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LP then
+			local ch = p.Character
+			local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+			local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
+			if hum and hrp and hum.Health > 0 then
+				table.insert(t, p)
+			end
+		end
+	end
+	return t
+end
+
+-- TP point blank sur la cible + spam Combat:Activate jusqu'a sa mort
+local function tryKillTarget(p)
+	local ch = p.Character
+	local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
+	local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+	if not (hrp and hum) or hum.Health <= 0 then
+		return false
+	end
+	local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+	local tool = ensureCombat()
+	if not (root and tool) then
+		return false
+	end
+	local deadline = os.clock() + 7
+	local hitCount = 0
+	while STATE.alive() and os.clock() < deadline do
+		if not hum.Parent or hum.Health <= 0 then
+			break
+		end
+		if not root.Parent then
+			break
+		end
+		if (root.Position - hrp.Position).Magnitude > 6 then
+			pcall(function()
+				root.CFrame = CFrame.new(hrp.Position + Vector3.new(0, 3, 2))
+			end)
+			task.wait(0.1)
+		end
+		pcall(function()
+			tool:Activate()
+		end)
+		hitCount += 1
+		task.wait(0.06)
+	end
+	local dead = (not hum.Parent) or hum.Health <= 0
+	if dead then
+		table.insert(killLogLines, 1, ("+ %s tue (coup %d)"):format(p.Name, hitCount))
+		if #killLogLines > 8 then
+			table.remove(killLogLines)
+		end
+	end
+	return dead
+end
+
+local function killCycle()
+	pcall(function()
+		brawlEvent:FireServer("joinBrawl")
+	end)
+	ensureCombat()
+	local killed = 0
+	for _, p in ipairs(aliveTargets()) do
+		if STATE.alive() then
+			local ok, err = pcall(tryKillTarget, p)
+			if not ok then
+				warn("BrolyHub: kill err - " .. tostring(err))
+			elseif ok then
+				-- returned true/false correct
+			end
+		end
+	end
+	-- compte les kills gagnes
+	local gained = currentKills() - killKillsBefore
+	if gained > 0 then
+		table.insert(killLogLines, 1, ("+ %d kills gains"):format(gained))
+		if #killLogLines > 8 then
+			table.remove(killLogLines)
+		end
+	end
+	return true
+end
+
+task.spawn(function()
+	while STATE.alive() do
+		task.wait(0.3)
+		if not killOn then
+			task.wait(1)
+		else
+			pcall(killCycle)
 		end
 	end
 end)
@@ -304,7 +437,7 @@ local function openCrate(name)
 	end)
 end
 
--- ================= WINDUI =================
+-- ================= WINDUI (theme blanc / noir / rose) =================
 local WindUI
 local okLoad, errLoad = pcall(function()
 	WindUI = loadstring(
@@ -316,8 +449,51 @@ if not okLoad then
 	return
 end
 
+local ROSE = Color3.fromRGB(236, 61, 153)
+local ROSEDEEP = Color3.fromRGB(196, 38, 122)
+local WHITE = Color3.fromRGB(255, 255, 255)
+local INK = Color3.fromRGB(32, 32, 40)
+local ROSEPAIR = Color3.fromRGB(255, 238, 246)
+local ROSEPAIN = Color3.fromRGB(255, 224, 240)
+local ROSEACT = Color3.fromRGB(255, 204, 229)
+local GRAYICON = Color3.fromRGB(140, 140, 155)
+local GRAYPH = Color3.fromRGB(165, 165, 175)
+
+pcall(function()
+	WindUI:AddTheme({
+		Name = "Broly White",
+		Background = WHITE,
+		Text = INK,
+		Accent = ROSE,
+		Button = ROSE,
+		Checkbox = ROSE,
+		Slider = ROSE,
+		SliderIcon = ROSEDEEP,
+		Primary = ROSE,
+		Toggle = ROSE,
+		Icon = GRAYICON,
+		ElementBackground = WHITE,
+		ElementBackgroundTransparency = 0,
+		PanelBackground = ROSEPAIR,
+		PanelBackgroundTransparency = 0,
+		LabelBackground = ROSEPAIN,
+		LabelBackgroundTransparency = 0,
+		Dialog = WHITE,
+		Placeholder = GRAYPH,
+		Outline = Color3.fromRGB(255, 214, 232),
+		DropdownBackground = WHITE,
+		DropdownTabBackground = ROSEPAIN,
+		TabBackground = WHITE,
+		TabBackgroundHover = ROSEPAIN,
+		TabBackgroundHoverTransparency = 0,
+		TabBackgroundActive = ROSEACT,
+		TabBackgroundActiveTransparency = 0,
+	})
+	WindUI:SetTheme("Broly White")
+end)
+
 local Window = WindUI:CreateWindow({
-	Title = "Broly Hub  |  WLS3  v3",
+	Title = "Broly Hub  |  WLS3  v4",
 	Folder = "BrolyHub",
 	Icon = "dumbbell",
 	NewElements = true,
@@ -326,21 +502,21 @@ local Window = WindUI:CreateWindow({
 
 do
 	Window:Tag({
-		Title = "v" .. WindUI.Version .. " - Masque avec K",
+		Title = "v" .. WindUI.Version .. " -| Masque avec K",
 		Icon = "github",
-		Color = Color3.fromHex("#7775F2"),
+		Color = ROSE,
 		Border = true,
 	})
 end
 
-local farmPara, rebirthPara, petPara, statsPara
+local farmPara, rebirthPara, petPara, statsPara, killPara
 
 -- ============ TAB FARM ============
 local FarmTab = Window:Tab({
 	Title = "Farm",
 	Desc = "Auto-farm force (sans respawn)",
 	Icon = "bolt",
-	IconColor = Color3.fromHex("#ECA201"),
+	IconColor = ROSE,
 	IconShape = "Square",
 	Border = true,
 })
@@ -434,12 +610,33 @@ FarmTab:Space({ Columns = 1 })
 
 FarmTab:Toggle({
 	Title = "TP Safe Zone",
-	Desc = "Nous teleporte en permanence a un endroit sur pour ne pas se faire tuer",
+	Desc = "Nous cale dans le ciel a tres haute altitude, inatteignable (bloque dans les airs)",
 	Flag = "safezone_on",
 	Value = false,
 	Callback = function(v)
 		safeZoneOn = v
 		if v then
+			teleportToSafe()
+		end
+	end,
+})
+
+FarmTab:Space({ Columns = 1 })
+
+FarmTab:Slider({
+	Title = "Hauteur safe zone",
+	Desc = "Altitude ou on reste suspendu (inatteignable)",
+	Flag = "safezone_height",
+	IsTooltip = true,
+	Step = 50,
+	Value = {
+		Min = 500,
+		Max = 8000,
+		Default = 1500,
+	},
+	Callback = function(value)
+		safeZoneHeight = value
+		if safeZoneOn then
 			teleportToSafe()
 		end
 	end,
@@ -453,31 +650,7 @@ FarmTab:Button({
 	Justify = "Center",
 	Callback = function()
 		teleportToSafe()
-		WindUI:Notify({ Title = "Safe Zone", Content = "TP effectue", Icon = "check", Duration = 3 })
-	end,
-})
-
-FarmTab:Space({ Columns = 1 })
-
-FarmTab:Button({
-	Title = "Definir la position actuelle comme Safe Zone",
-	Desc = "Va te mettre a l'abri puis clique ici",
-	Icon = "crosshair",
-	Justify = "Center",
-	Callback = function()
-		local ch = LP.Character
-		local root = ch and ch:FindFirstChild("HumanoidRootPart")
-		if root then
-			safeZone = root.Position + Vector3.new(0, 5, 0)
-			WindUI:Notify({
-				Title = "Safe Zone",
-				Content = "Position enregistree: " .. ("%.0f,%.0f,%.0f"):format(safeZone.X, safeZone.Y, safeZone.Z),
-				Icon = "check",
-				Duration = 4,
-			})
-		else
-			WindUI:Notify({ Title = "Safe Zone", Content = "Pas de personnage", Icon = "info", Duration = 3 })
-		end
+		WindUI:Notify({ Title = "Safe Zone", Content = "TP effectue (altitude " .. safeZoneHeight .. ")", Icon = "check", Duration = 3 })
 	end,
 })
 
@@ -524,12 +697,75 @@ farmPara = FarmTab:Paragraph({
 	Desc = "En attente...",
 })
 
+-- ============ TAB KILL (AUTO KILL ALL) ============
+local KillTab = Window:Tab({
+	Title = "Kill",
+	Desc = "Auto Kill All dans le lobby",
+	Icon = "swords",
+	IconColor = ROSE,
+	IconShape = "Square",
+	Border = true,
+})
+
+KillTab:Toggle({
+	Title = "Auto Kill All",
+	Desc = "TP sur chaque joueur + Combat tool + remotes. Tue tout le lobby tant que c'est active.",
+	Flag = "kill_on",
+	Value = false,
+	Callback = function(v)
+		killOn = v
+		if v then
+			killKillsBefore = currentKills()
+			table.insert(killLogLines, 1, "Auto Kill All ON")
+			WindUI:Notify({
+				Title = "Auto Kill All",
+				Content = "ON - il tue tout le lobby",
+				Icon = "swords",
+				Duration = 4,
+			})
+		end
+	end,
+})
+
+KillTab:Space({ Columns = 1 })
+
+killPara = KillTab:Paragraph({
+	Title = "Statut Kill",
+	Desc = "En attente...",
+})
+
+KillTab:Space({ Columns = 1 })
+
+KillTab:Button({
+	Title = "Kill All maintenant (1 cycle)",
+	Desc = "TP sur chaque joueur + Combat tool, des que l'option est ON",
+	Icon = "zap",
+	Justify = "Center",
+	Callback = function()
+		task.spawn(function()
+			local okWin, resWin = pcall(killCycle)
+			if not okWin then
+				WindUI:Notify({ Title = "Kill All", Content = "Erreur: " .. tostring(resWin), Icon = "ban", Duration = 4 })
+			else
+				WindUI:Notify({ Title = "Kill All", Content = "Cycle termine", Icon = "check", Duration = 3 })
+			end
+		end)
+	end,
+})
+
+KillTab:Space({ Columns = 1 })
+
+KillTab:Paragraph({
+	Title = "Comment ca marche",
+	Desc = "Des que l'option est ON, on se teleporte sur chaque joueur et on spam l'outil Combat.\nChaque kill nous rend plus fort (HP vole au serveur).\nSi des joueurs respawn, ils sont re-tues au cycle suivant.\nLa touche K masque le hub.",
+})
+
 -- ============ TAB SPEED ============
 local SpeedTab = Window:Tab({
 	Title = "Speed",
 	Desc = "Auto speed",
 	Icon = "gauge",
-	IconColor = Color3.fromHex("#3EC1FF"),
+	IconColor = ROSE,
 	IconShape = "Square",
 	Border = true,
 })
@@ -551,8 +787,8 @@ SpeedTab:Toggle({
 local RebirthTab = Window:Tab({
 	Title = "Rebirth",
 	Desc = "Rebirths en rafale",
-	Icon = "refresh",
-	IconColor = Color3.fromHex("#EF4F1D"),
+	Icon = "repeat",
+	IconColor = ROSE,
 	IconShape = "Square",
 	Border = true,
 })
@@ -578,8 +814,8 @@ rebirthPara = RebirthTab:Paragraph({
 local PetsTab = Window:Tab({
 	Title = "Pets",
 	Desc = "Pets de force + bonus",
-	Icon = "pet",
-	IconColor = Color3.fromHex("#10C550"),
+	Icon = "paw-print",
+	IconColor = ROSE,
 	IconShape = "Square",
 	Border = true,
 })
@@ -635,40 +871,6 @@ PetsTab:Button({
 PetsTab:Space({ Columns = 1 })
 
 PetsTab:Button({
-	Title = "Equiper Sarge",
-	Icon = "",
-	Justify = "Center",
-	Callback = function()
-		task.spawn(function()
-			if equipPet("Sarge") then
-				WindUI:Notify({ Title = "Sarge", Content = "Equipe !", Icon = "check", Duration = 3 })
-			else
-				WindUI:Notify({ Title = "Sarge", Content = "Non possede", Icon = "info", Duration = 3 })
-			end
-		end)
-	end,
-})
-
-PetsTab:Space({ Columns = 1 })
-
-PetsTab:Button({
-	Title = "Equiper Roboto",
-	Icon = "",
-	Justify = "Center",
-	Callback = function()
-		task.spawn(function()
-			if equipPet("Roboto") then
-				WindUI:Notify({ Title = "Roboto", Content = "Equipe !", Icon = "check", Duration = 3 })
-			else
-				WindUI:Notify({ Title = "Roboto", Content = "Non possede", Icon = "info", Duration = 3 })
-			end
-		end)
-	end,
-})
-
-PetsTab:Space({ Columns = 1 })
-
-PetsTab:Button({
 	Title = "Acheter Pookins / Flash / Karly / Skull",
 	Desc = "Bonus vitesse / sante / gems (achat simple)",
 	Icon = "",
@@ -687,26 +889,13 @@ PetsTab:Button({
 PetsTab:Space({ Columns = 1 })
 
 PetsTab:Button({
-	Title = "Desequiper pet",
+	Title = "Desequiper / Rebirth pet",
 	Icon = "",
 	Justify = "Center",
 	Callback = function()
 		local name = equippedPet.Value
 		if name and name ~= "" then
 			unequipPet(name)
-		end
-	end,
-})
-
-PetsTab:Space({ Columns = 1 })
-
-PetsTab:Button({
-	Title = "Rebirth pet (s'il est pret)",
-	Icon = "",
-	Justify = "Center",
-	Callback = function()
-		local name = equippedPet.Value
-		if name and name ~= "" then
 			rebirthPet(name)
 		end
 	end,
@@ -724,7 +913,7 @@ local CratesTab = Window:Tab({
 	Title = "Crates",
 	Desc = "Ouvrir des crates (coute des gems)",
 	Icon = "package",
-	IconColor = Color3.fromHex("#FF6A00"),
+	IconColor = ROSE,
 	IconShape = "Square",
 	Border = true,
 })
@@ -755,7 +944,7 @@ local InfoTab = Window:Tab({
 	Title = "Info",
 	Desc = "Stats + config",
 	Icon = "solar:info-square-bold",
-	IconColor = Color3.fromHex("#7775F2"),
+	IconColor = ROSE,
 	IconShape = "Square",
 	Border = true,
 })
@@ -770,13 +959,14 @@ InfoTab:Space({ Columns = 1 })
 InfoTab:Button({
 	Title = "Pause totale (tout off)",
 	Icon = "pause",
-	Color = Color3.fromHex("#EF4F1D"),
+	Color = Color3.fromHex("#E91E8C"),
 	Justify = "Center",
 	Callback = function()
 		farmOn = false
 		autoRebirth = false
 		autoPet = false
 		safeZoneOn = false
+		killOn = false
 		WindUI:Notify({ Title = "Pause", Content = "Tout est arrete", Icon = "info", Duration = 3 })
 	end,
 })
@@ -844,7 +1034,7 @@ task.spawn(function()
 		local steps = {
 			{ "stats", function()
 				statsPara:SetDesc(string.format(
-					"Force: %s\nRebirths: %s (multipl. x%s)\nSpeed: %s\nGems: %s\nPet: %s\nToken: %s\nSafe Zone: %.0f, %.0f, %.0f",
+					"Force: %s\nRebirths: %s (multipl. x%s)\nSpeed: %s\nGems: %s\nPet: %s\nToken: %s\nKills: %s\nSafe Zone: altitude %d",
 					fmt(strength.Value),
 					tostring(rebirths.Value),
 					fmt(strMult and strMult.Value or 1),
@@ -852,19 +1042,30 @@ task.spawn(function()
 					fmt(gems.Value),
 					equippedPet.Value ~= "" and equippedPet.Value or "aucun",
 					cachedToken and string.sub(cachedToken, 1, 8) .. "..." or "aucun",
-					safeZone.X, safeZone.Y, safeZone.Z
+					tostring(currentKills()),
+					safeZoneHeight
 				))
 			end },
 			{ "farm", function()
 				farmPara:SetDesc(string.format(
-					"Farm: %s\nValeur: %s | Intervalle: %ss\nDernier gain: +%s\nTaux: ~%s/s\nFires: %d\nSafeZone: %s",
+					"Farm: %s\nValeur: %s | Intervalle: %ss\nDernier gain: +%s\nTaux: ~%s/s\nFires: %d\nSafeZone: %s (altitude %d)",
 					farmOn and "ON" or "OFF",
 					fmt(farmValue),
 					("%.2f"):format(farmInterval),
 					fmt(lastGain),
 					fmt(rate),
 					fireCount,
-					safeZoneOn and "ON" or "OFF"
+					safeZoneOn and "ON" or "OFF",
+					safeZoneHeight
+				))
+			end },
+			{ "kill", function()
+				killPara:SetDesc(string.format(
+					"Auto Kill All: %s\nKills session: %s | total: %s\n%s",
+					killOn and "ON" or "OFF",
+					fmt(math.max(0, currentKills() - killKillsBefore)),
+					fmt(currentKills()),
+					table.concat(killLogLines, "\n")
 				))
 			end },
 			{ "rebirth", function()
@@ -902,4 +1103,4 @@ STATE.onCleanup(function()
 	end)
 end)
 
-print("BrolyHub v3: loaded (WindUI " .. tostring(WindUI and WindUI.Version or "?") .. ", keybind K)")
+print("BrolyHub v4: loaded (WindUI " .. tostring(WindUI and WindUI.Version or "?") .. ", keybind K)")
