@@ -1,0 +1,905 @@
+--[[
+    Broly Hub  |  Weight Lifting Simulator 3  (v3)
+    - Auto-farm Force (label), sans respawn
+    - Auto Rebirth (sans limite)
+    - Auto Pets, Crates
+    - TP Safe Zone pour le farm Force (evite de se faire tuer)
+    - Refresh token reglable (defaut 50ms = 0.05s)
+    - Masquer le hub avec la touche K
+]]
+
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local RS = game:GetService("ReplicatedStorage")
+
+math.randomseed(os.time())
+
+-- ================= STATE COMPAT (lancement direct sans live-reload) =================
+local STATE = STATE
+if not STATE then
+	local _alive = true
+	local _cleanups = {}
+	STATE = {
+		alive = function()
+			return _alive
+		end,
+		connect = function(sig, fn)
+			return sig:Connect(fn)
+		end,
+		onCleanup = function(fn)
+			table.insert(_cleanups, fn)
+		end,
+	}
+	task.spawn(function()
+		while _alive do
+			task.wait()
+		end
+		for _, fn in ipairs(_cleanups) do
+			pcall(fn)
+		end
+	end)
+end
+
+local rEvents = RS:WaitForChild("rEvents")
+local labelRemote = rEvents:WaitForChild("label")
+local rebirthRemote = rEvents:WaitForChild("rebirthEvent")
+local buyPetRemote = rEvents:WaitForChild("buyPetRemote")
+local crateRemote = rEvents:WaitForChild("crateRemote")
+local purchaseEvent = rEvents:WaitForChild("purchaseEvent")
+local tokenRemote = RS:WaitForChild("remote_events"):WaitForChild("token")
+
+local leaderstats = LP:WaitForChild("leaderstats")
+local strength = leaderstats:WaitForChild("Strength")
+local rebirths = leaderstats:WaitForChild("Rebirths")
+local gems = LP:WaitForChild("Gems")
+local speedStat = LP:FindFirstChild("Speed")
+local equippedPet = LP:WaitForChild("equippedPet")
+local strMult = LP:FindFirstChild("strengthMultiplier")
+local plrPets = LP:FindFirstChild("plrPets")
+
+local function fmt(n)
+	n = n or 0
+	if n >= 1e9 then
+		return ("%.2fB"):format(n / 1e9)
+	elseif n >= 1e6 then
+		return ("%.2fM"):format(n / 1e6)
+	elseif n >= 1e3 then
+		return ("%.2fK"):format(n / 1e3)
+	end
+	return tostring(math.floor(n))
+end
+
+-- ================= OPTIONS =================
+local farmOn = false
+local farmValue = 2121300000
+local farmInterval = 0.1
+local autoRefresh = true
+local refreshInterval = 0.05
+local autoRebirth = false
+local autoPet = false
+local safeZoneOn = false
+local safeZone = Vector3.new(0, 150, 0)
+local autoSpeedOn = false
+local speedTarget = Vector3.new(-689, 1370, -5257)
+
+-- ================= TOKEN =================
+local cachedToken = nil
+local repFn = nil
+local repRefindAt = 0
+
+STATE.connect(tokenRemote.OnClientEvent, function(...)
+	local a = { ... }
+	local t = a[1]
+	if typeof(t) == "string" then
+		cachedToken = t
+	elseif type(t) == "table" then
+		cachedToken = t[1]
+	end
+end)
+
+local function refreshToken()
+	if not repFn or os.clock() > repRefindAt then
+		repFn = filtergc("function", { Name = "repMachine" }, true)
+		repRefindAt = os.clock() + 10
+	end
+	if repFn then
+		local t = debug.getupvalue(repFn, 5)
+		if typeof(t) == "string" then
+			cachedToken = t
+		end
+	end
+	return cachedToken
+end
+
+refreshToken()
+
+-- ================= GAIN TRACKERS =================
+local lastStrength = strength.Value
+local lastGain = 0
+local gainTotal = 0
+local gainStart = os.clock()
+local rate = 0
+local fireCount = 0
+
+task.spawn(function()
+	while STATE.alive() do
+		task.wait(0.5)
+		local s = strength.Value
+		if s > lastStrength then
+			lastGain = s - lastStrength
+			gainTotal += lastGain
+			fireCount += 1
+			rate = gainTotal / math.max(1, os.clock() - gainStart)
+			lastStrength = s
+		elseif s < lastStrength then
+			lastStrength = s
+			lastGain = 0
+			gainTotal = 0
+			gainStart = os.clock()
+		end
+	end
+end)
+
+-- ================= FARM LOOP (force, sans respawn) =================
+local lastRefresh = os.clock()
+
+task.spawn(function()
+	while STATE.alive() do
+		task.wait(0.05)
+		if not farmOn then
+			task.wait(1)
+		else
+			local tok = cachedToken or refreshToken()
+			if tok then
+				pcall(function()
+					labelRemote:FireServer(tok, farmValue, nil)
+				end)
+			end
+			if autoRefresh and os.clock() - lastRefresh > refreshInterval then
+				refreshToken()
+				lastRefresh = os.clock()
+			end
+			if farmInterval > 0 then
+				task.wait(farmInterval)
+			end
+		end
+	end
+end)
+
+-- ================= REBIRTH LOOP (agressif, sans limite) =================
+task.spawn(function()
+	while STATE.alive() do
+		task.wait(0.2)
+		if autoRebirth then
+			local req = 10000 + (rebirths.Value or 0) * 1000
+			if strength.Value >= req then
+				pcall(function()
+					rebirthRemote:FireServer()
+				end)
+			end
+		end
+	end
+end)
+local function teleportToSafe()
+	local ch = LP.Character
+	local root = ch and ch:FindFirstChild("HumanoidRootPart")
+	if root then
+		pcall(function()
+			root.CFrame = CFrame.new(safeZone)
+		end)
+	end
+end
+
+task.spawn(function()
+	while STATE.alive() do
+		task.wait(1.5)
+		if safeZoneOn then
+			local ch = LP.Character
+			local root = ch and ch:FindFirstChild("HumanoidRootPart")
+			if root and (root.Position - safeZone).Magnitude > 8 then
+				pcall(function()
+					root.CFrame = CFrame.new(safeZone)
+				end)
+			end
+		end
+	end
+end)
+
+-- ================= AUTO SPEED LOOP =================
+task.spawn(function()
+	while STATE.alive() do
+		task.wait(0.03)
+		if autoSpeedOn then
+			local ch = LP.Character
+			local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+			local root = ch and ch:FindFirstChild("HumanoidRootPart")
+			if ch and hum and root and hum.Health > 0 then
+				root.CFrame = CFrame.new(speedTarget)
+				hum:ChangeState(Enum.HumanoidStateType.Running)
+				hum:Move(Vector3.new(0, 0, -1), true)
+			end
+		end
+	end
+end)
+
+-- ================= PETS =================
+local PET_PRIORITY = { "Roboto", "Sarge" }
+local PET_PRICE = { ["Roboto"] = 10000, ["Sarge"] = 7500, ["Krafty Karly"] = 3000, ["Pookins"] = 2000, ["Flash"] = 5000, ["Corrupted Skull"] = 8000 }
+
+local function ownedPets()
+	local set = {}
+	if plrPets then
+		for _, c in ipairs(plrPets:GetChildren()) do
+			set[c.Name] = true
+		end
+	end
+	return set
+end
+
+local function equipPet(name)
+	local ok, res = pcall(function()
+		return buyPetRemote:InvokeServer(name, "equipPet")
+	end)
+	return ok and res == true
+end
+
+local function buyPet(name)
+	pcall(function()
+		buyPetRemote:InvokeServer(name, "buyPet")
+	end)
+end
+
+local function unequipPet(name)
+	pcall(function()
+		buyPetRemote:InvokeServer(name, "unequipPet")
+	end)
+end
+
+local function rebirthPet(name)
+	pcall(function()
+		buyPetRemote:InvokeServer(name, "rebirthPet")
+	end)
+end
+
+task.spawn(function()
+	while STATE.alive() do
+		task.wait(10)
+		if autoPet then
+			local owned = ownedPets()
+			local best = nil
+			for _, pet in ipairs(PET_PRIORITY) do
+				if owned[pet] then
+					best = pet
+					break
+				end
+			end
+			if not best then
+				for _, pet in ipairs(PET_PRIORITY) do
+					if (gems.Value or 0) >= (PET_PRICE[pet] or math.huge) then
+						buyPet(pet)
+						if equipPet(pet) then
+							best = pet
+						end
+						break
+					end
+				end
+			end
+			if best and equippedPet.Value ~= best then
+				equipPet(best)
+			end
+		end
+	end
+end)
+
+-- ================= CRATES =================
+local CRATES = { "Tiny Crate", "Buff Crate", "Muscle Crate", "Tank Crate", "Legends Crate", "Godly Crate" }
+
+local function openCrate(name)
+	pcall(function()
+		purchaseEvent:FireServer(name)
+	end)
+	task.wait(0.3)
+	return pcall(function()
+		return crateRemote:InvokeServer(name)
+	end)
+end
+
+-- ================= WINDUI =================
+local WindUI
+local okLoad, errLoad = pcall(function()
+	WindUI = loadstring(
+		game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua")
+	)()
+end)
+if not okLoad then
+	warn("BrolyHub: WindUI load failed - " .. tostring(errLoad))
+	return
+end
+
+local Window = WindUI:CreateWindow({
+	Title = "Broly Hub  |  WLS3  v3",
+	Folder = "BrolyHub",
+	Icon = "dumbbell",
+	NewElements = true,
+	ToggleKey = Enum.KeyCode.K,
+})
+
+do
+	Window:Tag({
+		Title = "v" .. WindUI.Version .. " - Masque avec K",
+		Icon = "github",
+		Color = Color3.fromHex("#7775F2"),
+		Border = true,
+	})
+end
+
+local farmPara, rebirthPara, petPara, statsPara
+
+-- ============ TAB FARM ============
+local FarmTab = Window:Tab({
+	Title = "Farm",
+	Desc = "Auto-farm force (sans respawn)",
+	Icon = "bolt",
+	IconColor = Color3.fromHex("#ECA201"),
+	IconShape = "Square",
+	Border = true,
+})
+
+FarmTab:Toggle({
+	Title = "Auto Farm",
+	Desc = "Spam label:FireServer(token, valeur, nil)",
+	Flag = "farm_on",
+	Value = false,
+	Callback = function(v)
+		farmOn = v
+		if v then
+			refreshToken()
+			WindUI:Notify({
+				Title = "Auto Farm",
+				Content = "ON - valeur: " .. fmt(farmValue),
+				Icon = "bolt",
+				Duration = 3,
+			})
+		end
+	end,
+})
+
+FarmTab:Space({ Columns = 1 })
+
+FarmTab:Slider({
+	Title = "Valeur du fire",
+	Desc = "1 fire 10M ~ +2M force a 0.1s",
+	Flag = "farm_value",
+	IsTooltip = true,
+	Step = 100000,
+	Value = {
+		Min = 100000,
+		Max = 2121300000,
+		Default = 2121300000,
+	},
+	Callback = function(value)
+		farmValue = value
+	end,
+})
+
+FarmTab:Space({ Columns = 1 })
+
+FarmTab:Slider({
+	Title = "Intervalle (s)",
+	Desc = "0.1 = optimum ~20M/s",
+	Flag = "farm_interval",
+	IsTooltip = true,
+	Step = 0.01,
+	Value = {
+		Min = 0.05,
+		Max = 1,
+		Default = 0.1,
+	},
+	Callback = function(value)
+		farmInterval = value
+	end,
+})
+
+FarmTab:Space({ Columns = 1 })
+
+FarmTab:Toggle({
+	Title = "Auto refresh token",
+	Desc = "Re-grab le token toutes les 0.05s (ci-dessous)",
+	Flag = "farm_refresh",
+	Value = true,
+	Callback = function(v)
+		autoRefresh = v
+	end,
+})
+
+FarmTab:Space({ Columns = 1 })
+
+FarmTab:Slider({
+	Title = "Refresh token intervalle (s)",
+	Desc = "0.05 = 50ms. Tokens plus frais = fires acceptes",
+	Flag = "refresh_interval",
+	IsTooltip = true,
+	Step = 0.01,
+	Value = {
+		Min = 0.05,
+		Max = 10,
+		Default = 0.05,
+	},
+	Callback = function(value)
+		refreshInterval = value
+	end,
+})
+
+FarmTab:Space({ Columns = 1 })
+
+FarmTab:Toggle({
+	Title = "TP Safe Zone",
+	Desc = "Nous teleporte en permanence a un endroit sur pour ne pas se faire tuer",
+	Flag = "safezone_on",
+	Value = false,
+	Callback = function(v)
+		safeZoneOn = v
+		if v then
+			teleportToSafe()
+		end
+	end,
+})
+
+FarmTab:Space({ Columns = 1 })
+
+FarmTab:Button({
+	Title = "Deplacer maintenant vers la Safe Zone",
+	Icon = "map-pin",
+	Justify = "Center",
+	Callback = function()
+		teleportToSafe()
+		WindUI:Notify({ Title = "Safe Zone", Content = "TP effectue", Icon = "check", Duration = 3 })
+	end,
+})
+
+FarmTab:Space({ Columns = 1 })
+
+FarmTab:Button({
+	Title = "Definir la position actuelle comme Safe Zone",
+	Desc = "Va te mettre a l'abri puis clique ici",
+	Icon = "crosshair",
+	Justify = "Center",
+	Callback = function()
+		local ch = LP.Character
+		local root = ch and ch:FindFirstChild("HumanoidRootPart")
+		if root then
+			safeZone = root.Position + Vector3.new(0, 5, 0)
+			WindUI:Notify({
+				Title = "Safe Zone",
+				Content = "Position enregistree: " .. ("%.0f,%.0f,%.0f"):format(safeZone.X, safeZone.Y, safeZone.Z),
+				Icon = "check",
+				Duration = 4,
+			})
+		else
+			WindUI:Notify({ Title = "Safe Zone", Content = "Pas de personnage", Icon = "info", Duration = 3 })
+		end
+	end,
+})
+
+FarmTab:Space({ Columns = 1 })
+
+FarmTab:Button({
+	Title = "Fire 1x maintenant",
+	Icon = "zap",
+	Justify = "Center",
+	Callback = function()
+		local tok = cachedToken or refreshToken()
+		if tok then
+			pcall(function()
+				labelRemote:FireServer(tok, farmValue, nil)
+			end)
+			WindUI:Notify({ Title = "Fire manuel", Content = fmt(farmValue), Icon = "check", Duration = 3 })
+		else
+			WindUI:Notify({ Title = "Pas de token", Content = "Rafraichir le token", Icon = "info", Duration = 4 })
+		end
+	end,
+})
+
+FarmTab:Space({ Columns = 1 })
+
+FarmTab:Button({
+	Title = "Rafraichir token",
+	Icon = "refresh-cw",
+	Justify = "Center",
+	Callback = function()
+		local t = refreshToken()
+		WindUI:Notify({
+			Title = "Token",
+			Content = t and "token OK (" .. string.sub(t, 1, 8) .. "...)" or "introuvable",
+			Icon = t and "check" or "ban",
+			Duration = 3,
+		})
+	end,
+})
+
+FarmTab:Space({ Columns = 1 })
+
+farmPara = FarmTab:Paragraph({
+	Title = "Statut Farm",
+	Desc = "En attente...",
+})
+
+-- ============ TAB SPEED ============
+local SpeedTab = Window:Tab({
+	Title = "Speed",
+	Desc = "Auto speed",
+	Icon = "gauge",
+	IconColor = Color3.fromHex("#3EC1FF"),
+	IconShape = "Square",
+	Border = true,
+})
+
+SpeedTab:Toggle({
+	Title = "Auto Speed",
+	Desc = "TP sur le treadmill + force Running + Move",
+	Flag = "speed_on",
+	Value = false,
+	Callback = function(v)
+		autoSpeedOn = v
+		if v then
+			WindUI:Notify({ Title = "Auto Speed", Content = "ON", Icon = "gauge", Duration = 3 })
+		end
+	end,
+})
+
+-- ============ TAB REBIRTH ============
+local RebirthTab = Window:Tab({
+	Title = "Rebirth",
+	Desc = "Rebirths en rafale",
+	Icon = "refresh",
+	IconColor = Color3.fromHex("#EF4F1D"),
+	IconShape = "Square",
+	Border = true,
+})
+
+RebirthTab:Toggle({
+	Title = "Auto Rebirth",
+	Desc = "Rebirth des que possible (rapide, sans limite)",
+	Flag = "rebirth_on",
+	Value = false,
+	Callback = function(v)
+		autoRebirth = v
+	end,
+})
+
+RebirthTab:Space({ Columns = 1 })
+
+rebirthPara = RebirthTab:Paragraph({
+	Title = "Statut Rebirth",
+	Desc = "En attente...",
+})
+
+-- ============ TAB PETS ============
+local PetsTab = Window:Tab({
+	Title = "Pets",
+	Desc = "Pets de force + bonus",
+	Icon = "pet",
+	IconColor = Color3.fromHex("#10C550"),
+	IconShape = "Square",
+	Border = true,
+})
+
+PetsTab:Toggle({
+	Title = "Auto Pet",
+	Desc = "Achete + equipe le meilleur pet de force (Roboto > Sarge)",
+	Flag = "pet_on",
+	Value = false,
+	Callback = function(v)
+		autoPet = v
+	end,
+})
+
+PetsTab:Space({ Columns = 1 })
+
+PetsTab:Button({
+	Title = "Acheter + Equiper Sarge",
+	Desc = "7 500 Gems - +25% Force",
+	Icon = "",
+	Justify = "Center",
+	Callback = function()
+		task.spawn(function()
+			buyPet("Sarge")
+			if equipPet("Sarge") then
+				WindUI:Notify({ Title = "Sarge", Content = "Equipe !", Icon = "check", Duration = 3 })
+			else
+				WindUI:Notify({ Title = "Sarge", Content = "Pas assez de gems / deja equipe", Icon = "info", Duration = 3 })
+			end
+		end)
+	end,
+})
+
+PetsTab:Space({ Columns = 1 })
+
+PetsTab:Button({
+	Title = "Acheter + Equiper Roboto",
+	Desc = "10 000 Gems - +30% Force",
+	Icon = "",
+	Justify = "Center",
+	Callback = function()
+		task.spawn(function()
+			buyPet("Roboto")
+			if equipPet("Roboto") then
+				WindUI:Notify({ Title = "Roboto", Content = "Equipe !", Icon = "check", Duration = 3 })
+			else
+				WindUI:Notify({ Title = "Roboto", Content = "Pas assez de gems / deja equipe", Icon = "info", Duration = 3 })
+			end
+		end)
+	end,
+})
+
+PetsTab:Space({ Columns = 1 })
+
+PetsTab:Button({
+	Title = "Equiper Sarge",
+	Icon = "",
+	Justify = "Center",
+	Callback = function()
+		task.spawn(function()
+			if equipPet("Sarge") then
+				WindUI:Notify({ Title = "Sarge", Content = "Equipe !", Icon = "check", Duration = 3 })
+			else
+				WindUI:Notify({ Title = "Sarge", Content = "Non possede", Icon = "info", Duration = 3 })
+			end
+		end)
+	end,
+})
+
+PetsTab:Space({ Columns = 1 })
+
+PetsTab:Button({
+	Title = "Equiper Roboto",
+	Icon = "",
+	Justify = "Center",
+	Callback = function()
+		task.spawn(function()
+			if equipPet("Roboto") then
+				WindUI:Notify({ Title = "Roboto", Content = "Equipe !", Icon = "check", Duration = 3 })
+			else
+				WindUI:Notify({ Title = "Roboto", Content = "Non possede", Icon = "info", Duration = 3 })
+			end
+		end)
+	end,
+})
+
+PetsTab:Space({ Columns = 1 })
+
+PetsTab:Button({
+	Title = "Acheter Pookins / Flash / Karly / Skull",
+	Desc = "Bonus vitesse / sante / gems (achat simple)",
+	Icon = "",
+	Justify = "Center",
+	Callback = function()
+		task.spawn(function()
+			for _, pet in ipairs({ "Pookins", "Flash", "Krafty Karly", "Corrupted Skull" }) do
+				buyPet(pet)
+				task.wait(0.3)
+			end
+			WindUI:Notify({ Title = "Pets", Content = "Tentative d'achat terminee", Icon = "check", Duration = 3 })
+		end)
+	end,
+})
+
+PetsTab:Space({ Columns = 1 })
+
+PetsTab:Button({
+	Title = "Desequiper pet",
+	Icon = "",
+	Justify = "Center",
+	Callback = function()
+		local name = equippedPet.Value
+		if name and name ~= "" then
+			unequipPet(name)
+		end
+	end,
+})
+
+PetsTab:Space({ Columns = 1 })
+
+PetsTab:Button({
+	Title = "Rebirth pet (s'il est pret)",
+	Icon = "",
+	Justify = "Center",
+	Callback = function()
+		local name = equippedPet.Value
+		if name and name ~= "" then
+			rebirthPet(name)
+		end
+	end,
+})
+
+PetsTab:Space({ Columns = 1 })
+
+petPara = PetsTab:Paragraph({
+	Title = "Pets",
+	Desc = "Aucun pet",
+})
+
+-- ============ TAB CRATES ============
+local CratesTab = Window:Tab({
+	Title = "Crates",
+	Desc = "Ouvrir des crates (coute des gems)",
+	Icon = "package",
+	IconColor = Color3.fromHex("#FF6A00"),
+	IconShape = "Square",
+	Border = true,
+})
+
+for _, crateName in ipairs(CRATES) do
+	CratesTab:Button({
+		Title = "Ouvrir: " .. crateName,
+		Icon = "package-open",
+		Justify = "Center",
+		Callback = function()
+			task.spawn(function()
+				local ok, res = openCrate(crateName)
+				if ok and res then
+					WindUI:Notify({ Title = crateName, Content = "Ouvert !", Icon = "gift", Duration = 3 })
+				else
+					WindUI:Notify({ Title = crateName, Content = "Echec / pas assez de gems", Icon = "ban", Duration = 3 })
+				end
+			end)
+		end,
+	})
+	if crateName ~= CRATES[#CRATES] then
+		CratesTab:Space({ Columns = 1 })
+	end
+end
+
+-- ============ TAB INFO / CONFIG ============
+local InfoTab = Window:Tab({
+	Title = "Info",
+	Desc = "Stats + config",
+	Icon = "solar:info-square-bold",
+	IconColor = Color3.fromHex("#7775F2"),
+	IconShape = "Square",
+	Border = true,
+})
+
+statsPara = InfoTab:Paragraph({
+	Title = "Stats",
+	Desc = "Chargement...",
+})
+
+InfoTab:Space({ Columns = 1 })
+
+InfoTab:Button({
+	Title = "Pause totale (tout off)",
+	Icon = "pause",
+	Color = Color3.fromHex("#EF4F1D"),
+	Justify = "Center",
+	Callback = function()
+		farmOn = false
+		autoRebirth = false
+		autoPet = false
+		safeZoneOn = false
+		WindUI:Notify({ Title = "Pause", Content = "Tout est arrete", Icon = "info", Duration = 3 })
+	end,
+})
+
+InfoTab:Space({ Columns = 1 })
+
+local ConfigNameInput = InfoTab:Input({
+	Title = "Nom de config",
+	Icon = "file-cog",
+	Value = "default",
+})
+
+InfoTab:Space({ Columns = 1 })
+
+InfoTab:Button({
+	Title = "Sauvegarder config",
+	Icon = "save",
+	Justify = "Center",
+	Callback = function()
+		local name = ConfigNameInput.Value or "default"
+		Window.CurrentConfig = Window.ConfigManager:Config(name)
+		local saved = Window.CurrentConfig:Save()
+		WindUI:Notify({
+			Title = "Config",
+			Content = saved and ("Config '" .. name .. "' sauvee") or "Echec sauvegarde",
+			Icon = saved and "check" or "ban",
+			Duration = 3,
+		})
+	end,
+})
+
+InfoTab:Space({ Columns = 1 })
+
+InfoTab:Button({
+	Title = "Charger config",
+	Icon = "folder-open",
+	Justify = "Center",
+	Callback = function()
+		local name = ConfigNameInput.Value or "default"
+		local cfg = Window.ConfigManager:CreateConfig(name)
+		if cfg:Load() then
+			WindUI:Notify({ Title = "Config", Content = "Config chargee", Icon = "check", Duration = 3 })
+		else
+			WindUI:Notify({ Title = "Config", Content = "Config introuvable", Icon = "info", Duration = 3 })
+		end
+	end,
+})
+
+InfoTab:Space({ Columns = 1 })
+
+InfoTab:Button({
+	Title = "Fermer le hub (destroy)",
+	Icon = "shredder",
+	Color = Color3.fromHex("#ff4830"),
+	Justify = "Center",
+	Callback = function()
+		Window:Destroy()
+	end,
+})
+
+-- ================= INFO LOOP =================
+task.spawn(function()
+	while STATE.alive() do
+		task.wait(1)
+		local steps = {
+			{ "stats", function()
+				statsPara:SetDesc(string.format(
+					"Force: %s\nRebirths: %s (multipl. x%s)\nSpeed: %s\nGems: %s\nPet: %s\nToken: %s\nSafe Zone: %.0f, %.0f, %.0f",
+					fmt(strength.Value),
+					tostring(rebirths.Value),
+					fmt(strMult and strMult.Value or 1),
+					fmt(speedStat and speedStat.Value or 0),
+					fmt(gems.Value),
+					equippedPet.Value ~= "" and equippedPet.Value or "aucun",
+					cachedToken and string.sub(cachedToken, 1, 8) .. "..." or "aucun",
+					safeZone.X, safeZone.Y, safeZone.Z
+				))
+			end },
+			{ "farm", function()
+				farmPara:SetDesc(string.format(
+					"Farm: %s\nValeur: %s | Intervalle: %ss\nDernier gain: +%s\nTaux: ~%s/s\nFires: %d\nSafeZone: %s",
+					farmOn and "ON" or "OFF",
+					fmt(farmValue),
+					("%.2f"):format(farmInterval),
+					fmt(lastGain),
+					fmt(rate),
+					fireCount,
+					safeZoneOn and "ON" or "OFF"
+				))
+			end },
+			{ "rebirth", function()
+				rebirthPara:SetDesc(string.format(
+					"Auto: %s (sans limite)\nRebirths: %s\nRequis: %s\nMultiplicateur: x%s",
+					autoRebirth and "ON" or "OFF",
+					tostring(rebirths.Value),
+					fmt(10000 + (rebirths.Value or 0) * 1000),
+					fmt(strMult and strMult.Value or 1)
+				))
+			end },
+			{ "pet", function()
+				local owned = {}
+				if plrPets then
+					for _, c in ipairs(plrPets:GetChildren()) do
+						table.insert(owned, c.Name)
+					end
+				end
+				petPara:SetDesc(#owned > 0 and table.concat(owned, ", ") or "Aucun pet possede")
+			end },
+		}
+		for _, step in ipairs(steps) do
+			local okU, errU = pcall(step[2])
+			if not okU then
+				warn("BrolyHub: info step '" .. step[1] .. "' error - " .. tostring(errU))
+			end
+		end
+	end
+end)
+
+-- ================= CLEANUP =================
+STATE.onCleanup(function()
+	pcall(function()
+		Window:Destroy()
+	end)
+end)
+
+print("BrolyHub v3: loaded (WindUI " .. tostring(WindUI and WindUI.Version or "?") .. ", keybind K)")
