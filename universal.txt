@@ -392,7 +392,7 @@ discordText.Parent = discordBtn
 
 discordBtn.MouseButton1Click:Connect(function()
     if setclipboard then
-        setclipboard("https://discord.gg/425usWgXr")
+        setclipboard("https://discord.gg/kZ8gHn5zs")
         discordText.Text = "Copied!"
         task.wait(2)
         discordText.Text = "Join Discord"
